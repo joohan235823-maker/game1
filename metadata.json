@@ -1,0 +1,6 @@
+{
+  "name": "보석 매치 3 퍼즐 (Jewel Match)",
+  "description": "클래식 비주얼드 스타일의 8x8 보석 매치 3 퍼즐 게임. 모바일 터치/스와이프 지원, 연쇄 콤보, 특수 보석 및 오디오 효과 탑재.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
