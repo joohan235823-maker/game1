@@ -96,8 +96,8 @@ export function isValidSwap(
   const g2 = board[r2]?.[c2];
   if (!g1 || !g2) return false;
 
-  // Hypercube can swap with ANY adjacent gem!
-  if (g1.special === 'hypercube' || g2.special === 'hypercube') {
+  // Special gems (Flame, Star, Hypercube) can swap with ANY adjacent gem directly!
+  if (g1.special !== 'none' || g2.special !== 'none') {
     return true;
   }
 
@@ -337,8 +337,28 @@ export function findMatches(
   }
 
   // EXPAND FOR SPECIAL EXPLOSIONS (Flame 3x3, Star row+col)
+  // 1. A special gem explodes if it is part of a match cluster (hLines/vLines)
+  // 2. A special gem explodes if it was directly swapped in a special swap
+  // 3. A special gem caught in an explosion of another special gem ALSO detonates in cascade!
   const finalMatched = new Set<string>(matchedCoords);
-  const queue = Array.from(matchedCoords);
+  const queue: string[] = [];
+  
+  // Find special gems directly matched or swapped
+  matchedCoords.forEach((coord) => {
+    const [r, c] = coord.split(',').map(Number);
+    const gem = board[r]?.[c];
+    if (gem && gem.special !== 'none') {
+      const isDirectlyMatched =
+        (lastSwap && ((lastSwap.r1 === r && lastSwap.c1 === c) || (lastSwap.r2 === r && lastSwap.c2 === c))) ||
+        hLines.some((h) => h.r === r && c >= h.startC && c <= h.endC) ||
+        vLines.some((v) => v.c === c && r >= v.startR && r <= v.endR);
+
+      if (isDirectlyMatched) {
+        queue.push(coord);
+      }
+    }
+  });
+
   const processedSpecials = new Set<string>();
 
   while (queue.length > 0) {
@@ -360,6 +380,10 @@ export function findMatches(
             const nCoord = `${nr},${nc}`;
             if (!finalMatched.has(nCoord)) {
               finalMatched.add(nCoord);
+            }
+            // If another special gem is caught in this explosion, chain detonate it!
+            const nGem = board[nr]?.[nc];
+            if (nGem && nGem.special !== 'none' && !processedSpecials.has(nCoord)) {
               queue.push(nCoord);
             }
           }
@@ -371,6 +395,9 @@ export function findMatches(
         const nCoord = `${r},${col}`;
         if (!finalMatched.has(nCoord)) {
           finalMatched.add(nCoord);
+        }
+        const nGem = board[r]?.[col];
+        if (nGem && nGem.special !== 'none' && !processedSpecials.has(nCoord)) {
           queue.push(nCoord);
         }
       }
@@ -378,6 +405,9 @@ export function findMatches(
         const nCoord = `${row},${c}`;
         if (!finalMatched.has(nCoord)) {
           finalMatched.add(nCoord);
+        }
+        const nGem = board[row]?.[c];
+        if (nGem && nGem.special !== 'none' && !processedSpecials.has(nCoord)) {
           queue.push(nCoord);
         }
       }
@@ -405,7 +435,266 @@ export function findMatches(
 }
 
 /**
- * Handle direct Hypercube swap resolution
+ * Resolves special gem swaps (Flame, Star, Hypercube swapped with each other or normal gems).
+ */
+export function resolveSpecialSwap(
+  board: (Gem | null)[][],
+  r1: number,
+  c1: number,
+  r2: number,
+  c2: number
+): MatchResult {
+  const g1 = board[r1]?.[c1];
+  const g2 = board[r2]?.[c2];
+  if (!g1 || !g2) {
+    return { matchedGems: [], specialCreations: [], score: 0, comboCount: 1 };
+  }
+
+  const s1 = g1.special;
+  const s2 = g2.special;
+  const matchedGemsSet = new Set<string>();
+
+  const avgR = Math.round((r1 + r2) / 2);
+  const avgC = Math.round((c1 + c2) / 2);
+
+  const addCell = (r: number, c: number) => {
+    if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+      if (board[r]?.[c]) {
+        matchedGemsSet.add(`${r},${c}`);
+      }
+    }
+  };
+
+  let baseScore = 0;
+
+  // 1. HYPERCUBE + HYPERCUBE: Erases ALL gems on board
+  if (s1 === 'hypercube' && s2 === 'hypercube') {
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        addCell(r, c);
+      }
+    }
+    baseScore = 5000;
+  }
+  // 2. FLAME + FLAME: 7x7 Mega Explosion around swap center
+  else if (s1 === 'flame' && s2 === 'flame') {
+    for (let dr = -3; dr <= 3; dr++) {
+      for (let dc = -3; dc <= 3; dc++) {
+        addCell(avgR + dr, avgC + dc);
+      }
+    }
+    baseScore = 2500;
+  }
+  // 3. STAR + STAR: 3-cell wide / 3-cell high cross laser
+  else if (s1 === 'star' && s2 === 'star') {
+    for (let r = 0; r < GRID_SIZE; r++) {
+      addCell(r, avgC - 1);
+      addCell(r, avgC);
+      addCell(r, avgC + 1);
+    }
+    for (let c = 0; c < GRID_SIZE; c++) {
+      addCell(avgR - 1, c);
+      addCell(avgR, c);
+      addCell(avgR + 1, c);
+    }
+    baseScore = 2500;
+  }
+  // 4. FLAME + STAR (or STAR + FLAME): Cross Explosion (+ shape with 3x3 explosions at ends & center)
+  else if ((s1 === 'flame' && s2 === 'star') || (s1 === 'star' && s2 === 'flame')) {
+    // Cross lasers across entire row and col
+    for (let r = 0; r < GRID_SIZE; r++) addCell(r, avgC);
+    for (let c = 0; c < GRID_SIZE; c++) addCell(avgR, c);
+
+    // 3x3 explosions at center and 4 ends of the cross on grid edges
+    const explosionCenters = [
+      { r: avgR, c: avgC },
+      { r: 0, c: avgC },
+      { r: GRID_SIZE - 1, c: avgC },
+      { r: avgR, c: 0 },
+      { r: avgR, c: GRID_SIZE - 1 },
+    ];
+    for (const center of explosionCenters) {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          addCell(center.r + dr, center.c + dc);
+        }
+      }
+    }
+    baseScore = 3000;
+  }
+  // 5. HYPERCUBE + FLAME: Detonates all gems of target color as Flame gems!
+  else if (s1 === 'hypercube' && s2 === 'flame') {
+    const targetType = g2.type;
+    addCell(r1, c1);
+    addCell(r2, c2);
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (board[r][c]?.type === targetType) {
+          for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+              addCell(r + dr, c + dc);
+            }
+          }
+        }
+      }
+    }
+    baseScore = 4000;
+  } else if (s2 === 'hypercube' && s1 === 'flame') {
+    const targetType = g1.type;
+    addCell(r1, c1);
+    addCell(r2, c2);
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (board[r][c]?.type === targetType) {
+          for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+              addCell(r + dr, c + dc);
+            }
+          }
+        }
+      }
+    }
+    baseScore = 4000;
+  }
+  // 6. HYPERCUBE + STAR: Detonates all gems of target color as Star cross lasers!
+  else if (s1 === 'hypercube' && s2 === 'star') {
+    const targetType = g2.type;
+    addCell(r1, c1);
+    addCell(r2, c2);
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (board[r][c]?.type === targetType) {
+          for (let i = 0; i < GRID_SIZE; i++) {
+            addCell(r, i);
+            addCell(i, c);
+          }
+        }
+      }
+    }
+    baseScore = 4000;
+  } else if (s2 === 'hypercube' && s1 === 'star') {
+    const targetType = g1.type;
+    addCell(r1, c1);
+    addCell(r2, c2);
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (board[r][c]?.type === targetType) {
+          for (let i = 0; i < GRID_SIZE; i++) {
+            addCell(r, i);
+            addCell(i, c);
+          }
+        }
+      }
+    }
+    baseScore = 4000;
+  }
+  // 7. HYPERCUBE + NORMAL
+  else if (s1 === 'hypercube' || s2 === 'hypercube') {
+    const targetType = s1 === 'hypercube' ? g2.type : g1.type;
+    addCell(r1, c1);
+    addCell(r2, c2);
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (board[r][c]?.type === targetType) {
+          addCell(r, c);
+        }
+      }
+    }
+    baseScore = matchedGemsSet.size * 100;
+  }
+  // 8. FLAME + NORMAL
+  else if (s1 === 'flame' || s2 === 'flame') {
+    const flameR = s1 === 'flame' ? r1 : r2;
+    const flameC = s1 === 'flame' ? c1 : c2;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        addCell(flameR + dr, flameC + dc);
+      }
+    }
+    // Also include standard 3-matches
+    const standardMatches = findMatches(board, { r1, c1, r2, c2 });
+    standardMatches.matchedGems.forEach((m) => addCell(m.r, m.c));
+    baseScore = matchedGemsSet.size * 75;
+  }
+  // 9. STAR + NORMAL
+  else if (s1 === 'star' || s2 === 'star') {
+    const starR = s1 === 'star' ? r1 : r2;
+    const starC = s1 === 'star' ? c1 : c2;
+    for (let i = 0; i < GRID_SIZE; i++) {
+      addCell(starR, i);
+      addCell(i, starC);
+    }
+    // Also include standard 3-matches
+    const standardMatches = findMatches(board, { r1, c1, r2, c2 });
+    standardMatches.matchedGems.forEach((m) => addCell(m.r, m.c));
+    baseScore = matchedGemsSet.size * 75;
+  }
+
+  // Expand queue for chain reactions if any hit gems are special
+  const finalMatchedSet = new Set<string>(matchedGemsSet);
+  const queue = Array.from(matchedGemsSet);
+  const processedSpecials = new Set<string>();
+
+  while (queue.length > 0) {
+    const coord = queue.pop()!;
+    if (processedSpecials.has(coord)) continue;
+    processedSpecials.add(coord);
+
+    const [r, c] = coord.split(',').map(Number);
+    const gem = board[r]?.[c];
+    if (!gem) continue;
+
+    if (gem.special === 'flame') {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
+            const nCoord = `${nr},${nc}`;
+            if (!finalMatchedSet.has(nCoord)) {
+              finalMatchedSet.add(nCoord);
+              queue.push(nCoord);
+            }
+          }
+        }
+      }
+    } else if (gem.special === 'star') {
+      for (let col = 0; col < GRID_SIZE; col++) {
+        const nCoord = `${r},${col}`;
+        if (!finalMatchedSet.has(nCoord)) {
+          finalMatchedSet.add(nCoord);
+          queue.push(nCoord);
+        }
+      }
+      for (let row = 0; row < GRID_SIZE; row++) {
+        const nCoord = `${row},${c}`;
+        if (!finalMatchedSet.has(nCoord)) {
+          finalMatchedSet.add(nCoord);
+          queue.push(nCoord);
+        }
+      }
+    }
+  }
+
+  const matchedGems: { r: number; c: number; gem: Gem }[] = [];
+  finalMatchedSet.forEach((coord) => {
+    const [r, c] = coord.split(',').map(Number);
+    const gem = board[r]?.[c];
+    if (gem) {
+      matchedGems.push({ r, c, gem });
+    }
+  });
+
+  return {
+    matchedGems,
+    specialCreations: [],
+    score: baseScore,
+    comboCount: 1,
+  };
+}
+
+/**
+ * Handle direct Hypercube swap resolution (delegates to resolveSpecialSwap)
  */
 export function resolveHypercubeSwap(
   board: (Gem | null)[][],
@@ -414,56 +703,7 @@ export function resolveHypercubeSwap(
   r2: number,
   c2: number
 ): MatchResult {
-  const g1 = board[r1][c1];
-  const g2 = board[r2][c2];
-  const matchedGems: { r: number; c: number; gem: Gem }[] = [];
-
-  if (!g1 || !g2) {
-    return { matchedGems: [], specialCreations: [], score: 0, comboCount: 1 };
-  }
-
-  // Double Hypercube swap! Destroys everything on board!
-  if (g1.special === 'hypercube' && g2.special === 'hypercube') {
-    for (let r = 0; r < GRID_SIZE; r++) {
-      for (let c = 0; c < GRID_SIZE; c++) {
-        const gem = board[r][c];
-        if (gem) {
-          matchedGems.push({ r, c, gem });
-        }
-      }
-    }
-    return {
-      matchedGems,
-      specialCreations: [],
-      score: 5000,
-      comboCount: 2,
-    };
-  }
-
-  // Hypercube swapped with a normal or special gem
-  const targetType = g1.special === 'hypercube' ? g2.type : g1.type;
-  // Always include both swapped gems
-  matchedGems.push({ r: r1, c: c1, gem: g1 });
-  matchedGems.push({ r: r2, c: c2, gem: g2 });
-
-  // Find all gems of targetType
-  for (let r = 0; r < GRID_SIZE; r++) {
-    for (let c = 0; c < GRID_SIZE; c++) {
-      const gem = board[r][c];
-      if (gem && gem.type === targetType) {
-        if (!matchedGems.some((m) => m.r === r && m.c === c)) {
-          matchedGems.push({ r, c, gem });
-        }
-      }
-    }
-  }
-
-  return {
-    matchedGems,
-    specialCreations: [],
-    score: matchedGems.length * 100,
-    comboCount: 1,
-  };
+  return resolveSpecialSwap(board, r1, c1, r2, c2);
 }
 
 /**
@@ -571,14 +811,35 @@ export function evaluateMovePotential(
   const g2 = board[r2]?.[c2];
   if (!g1 || !g2) return { score: 0, specialType: 'none', matchedCount: 0 };
 
-  // Hypercube resolution
-  if (g1.special === 'hypercube' || g2.special === 'hypercube') {
-    const res = resolveHypercubeSwap(board, r1, c1, r2, c2);
-    return {
-      score: res.score + 500, // High strategic value
-      specialType: 'hypercube',
-      matchedCount: res.matchedGems.length,
-    };
+  // Special gem swap resolution
+  if (g1.special !== 'none' || g2.special !== 'none') {
+    // Only give special swap score if it is a VALID special interaction
+    // (e.g. Hypercube + any gem, or Special + Special match)
+    // A regular gem swapped with a Flame/Star Gem WITHOUT creating a 3-match is INVALID and 0 points!
+    const isHypercubeSwap = g1.special === 'hypercube' || g2.special === 'hypercube';
+    const isDoubleSpecial = g1.special !== 'none' && g2.special !== 'none';
+    
+    // Check if swap makes a normal match
+    const tempBoard = board.map((row) => [...row]);
+    tempBoard[r1][c1] = { ...g2, row: r1, col: c1 };
+    tempBoard[r2][c2] = { ...g1, row: r2, col: c2 };
+    const matchRes = findMatches(tempBoard, { r1, c1, r2, c2 });
+
+    if (isHypercubeSwap || isDoubleSpecial || matchRes.matchedGems.length > 0) {
+      const res = resolveSpecialSwap(board, r1, c1, r2, c2);
+      let specType: SpecialType = 'none';
+      if (g1.special !== 'none') specType = g1.special;
+      else if (g2.special !== 'none') specType = g2.special;
+
+      return {
+        score: res.score + (isHypercubeSwap || isDoubleSpecial ? 600 : 200),
+        specialType: specType,
+        matchedCount: res.matchedGems.length,
+      };
+    }
+
+    // Invalid special swap without a match
+    return { score: 0, specialType: 'none', matchedCount: 0 };
   }
 
   // Regular swap evaluation
@@ -706,8 +967,15 @@ export function evaluatePlayerMove(
   }
 
   // 1. Brilliant (!!)
-  // Creates a Hypercube (5-match) OR captures an elusive top 1% combination with enormous score
-  if (chosenEval.specialType === 'hypercube' || (myScore >= 700 && isBestMove)) {
+  // Reserved strictly for Hypercube (5-match) creation, Double Special combination, or massive score >= 1200
+  const isDoubleSpecialTrigger =
+    (board[chosenR1]?.[chosenC1]?.special !== 'none' && board[chosenR2]?.[chosenC2]?.special !== 'none');
+
+  if (
+    chosenEval.specialType === 'hypercube' ||
+    isDoubleSpecialTrigger ||
+    (myScore >= 1200 && isBestMove && bestScore >= 1200)
+  ) {
     return {
       grade: 'brilliant',
       titleKo: '브릴리언트!! (Brilliant)',
@@ -716,18 +984,18 @@ export function evaluatePlayerMove(
       color: '#06b6d4', // Cyan-teal
       bgColor: 'rgba(6, 182, 212, 0.22)',
       borderColor: '#22d3ee',
-      reason: `통계 상위 1%의 묘수! 하이퍼큐브 5-매치 또는 압도적인 고득점 기회를 완벽하게 성공시켰습니다.`,
+      reason: `통계 상위 1%의 극소수 묘수! 하이퍼큐브 5-매치 또는 특수 보석 결합 기회를 성공시켰습니다.`,
       scoreGain: myScore,
       bestScoreGain: bestScore,
     };
   }
 
   // 2. Great Move (!)
-  // Creates a Star Gem (T/L shape) or Flame Gem (4-match) or activates massive explosion
+  // Creates a Star Gem (T/L shape) or Flame Gem (4-match) or activates high score >= 600
   if (
     chosenEval.specialType === 'star' ||
     chosenEval.specialType === 'flame' ||
-    (myScore >= 400 && isBestMove)
+    (myScore >= 600 && isBestMove)
   ) {
     return {
       grade: 'great',

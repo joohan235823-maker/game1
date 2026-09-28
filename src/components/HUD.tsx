@@ -17,7 +17,6 @@ interface HUDProps {
   isPaused: boolean;
   onTogglePause: () => void;
   comboCount: number;
-  isFeverMode?: boolean;
 }
 
 export const HUD: React.FC<HUDProps> = ({
@@ -34,7 +33,6 @@ export const HUD: React.FC<HUDProps> = ({
   isPaused,
   onTogglePause,
   comboCount,
-  isFeverMode = false,
 }) => {
   return (
     <header className="w-full max-w-xl mx-auto flex flex-col gap-1.5 px-3 pt-2 pb-0 text-white">
@@ -42,13 +40,7 @@ export const HUD: React.FC<HUDProps> = ({
       <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-1.5">
         {/* Brand Zone: Clean Wordmark */}
         <div className="flex items-center gap-2">
-          <div
-            className={`w-7 h-7 rounded-lg flex items-center justify-center shadow-md transition-colors ${
-              isFeverMode
-                ? 'bg-gradient-to-tr from-red-500 via-orange-500 to-yellow-400 animate-pulse'
-                : 'bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-500'
-            }`}
-          >
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center shadow-md bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-500">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
@@ -132,9 +124,10 @@ export const HUD: React.FC<HUDProps> = ({
           <button
             onClick={onHint}
             className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition-all active:scale-95"
+            title="힌트 사용 (100점 차감)"
           >
             <Lightbulb className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <span>힌트</span>
+            <span>힌트 (-100점)</span>
           </button>
 
           {mode === 'time_attack' && (
@@ -160,27 +153,14 @@ export const HUD: React.FC<HUDProps> = ({
       <div
         className={`grid ${
           mode === 'time_attack' ? 'grid-cols-3' : 'grid-cols-2'
-        } gap-2 p-2 sm:p-2.5 rounded-xl transition-all duration-300 ${
-          isFeverMode
-            ? 'bg-gradient-to-r from-red-950/90 via-amber-950/80 to-red-950/90 border border-amber-500/60 shadow-[0_0_20px_rgba(239,68,68,0.5)]'
-            : 'bg-slate-900/80 border border-slate-800 shadow-md'
-        }`}
+        } gap-2 p-2 sm:p-2.5 rounded-xl transition-all duration-300 bg-slate-900/80 border border-slate-800 shadow-md`}
       >
         {/* Current Score */}
         <div className="flex flex-col">
           <div className="flex items-center gap-1">
             <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">점수</span>
-            {isFeverMode && (
-              <span className="text-[9px] font-black text-amber-300 bg-red-600/40 px-1 py-0.2 rounded border border-amber-400/50">
-                FEVER 2X
-              </span>
-            )}
           </div>
-          <span
-            className={`text-xl sm:text-2xl font-black tabular-nums transition-colors ${
-              isFeverMode ? 'text-amber-200 animate-pulse' : 'text-amber-300'
-            }`}
-          >
+          <span className="text-xl sm:text-2xl font-black tabular-nums transition-colors text-amber-300">
             {score.toLocaleString()}
           </span>
         </div>
@@ -204,14 +184,10 @@ export const HUD: React.FC<HUDProps> = ({
           <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">연쇄 콤보</span>
           <span
             className={`text-xl sm:text-2xl font-black tabular-nums ${
-              isFeverMode
-                ? 'text-orange-400 animate-bounce'
-                : comboCount > 1
-                ? 'text-rose-400 animate-bounce'
-                : 'text-slate-300'
+              comboCount > 1 ? 'text-rose-400 animate-bounce' : 'text-slate-300'
             }`}
           >
-            {isFeverMode ? `x${comboCount} (FEVER!)` : comboCount > 1 ? `x${comboCount}!` : 'x1'}
+            {comboCount > 1 ? `x${comboCount}!` : 'x1'}
           </span>
         </div>
       </div>

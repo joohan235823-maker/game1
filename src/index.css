@@ -107,3 +107,26 @@
   animation: riseEmber 2.2s linear infinite;
 }
 
+/* Gem Fall / Drop Animation */
+@keyframes dropIn {
+  0% {
+    transform: translateY(-80%) scaleY(1.18) scaleX(0.85);
+    opacity: 0.2;
+  }
+  70% {
+    transform: translateY(6%) scaleY(0.92) scaleX(1.08);
+    opacity: 1;
+  }
+  85% {
+    transform: translateY(-2%) scaleY(1.03) scaleX(0.97);
+  }
+  100% {
+    transform: translateY(0%) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-drop-in {
+  animation: dropIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+

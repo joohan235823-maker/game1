@@ -20,7 +20,7 @@ export const GemGraphic: React.FC<GemGraphicProps> = ({
     <div
       className={`relative w-full h-full flex items-center justify-center select-none pointer-events-none transition-transform duration-150 ${
         isSelected ? 'scale-110 drop-shadow-[0_0_12px_rgba(250,204,21,0.9)]' : ''
-      } ${isHint ? 'animate-bounce drop-shadow-[0_0_10px_rgba(255,255,255,0.95)]' : ''} ${className}`}
+      } ${isHint ? 'scale-105 drop-shadow-[0_0_14px_rgba(255,255,255,1)] animate-pulse' : ''} ${className}`}
     >
       {/* Base Gem SVG */}
       <svg
@@ -192,9 +192,9 @@ export const GemGraphic: React.FC<GemGraphicProps> = ({
             <polygon points="12,30 30,12 38,28 28,38" fill="#ffffff" />
             {/* Center table */}
             <polygon points="38,28 62,28 72,38 72,62 62,72 38,72 28,62 28,38" fill="url(#diamondCenter)" stroke="#ffffff" strokeWidth="1.2" />
-            {/* Star facet highlight */}
-            <polygon points="50,32 55,45 68,50 55,55 50,68 45,55 32,50 45,45" fill="#ffffff" opacity="0.4" />
-            <circle cx="44" cy="40" r="3.5" fill="#ffffff" opacity="0.95" />
+            {/* Geometric diamond facet lines (Cross & Rhombus table highlight instead of star shape) */}
+            <polygon points="50,34 64,50 50,66 36,50" fill="#ffffff" opacity="0.35" stroke="#ffffff" strokeWidth="0.8" />
+            <circle cx="42" cy="42" r="3" fill="#ffffff" opacity="0.95" />
           </g>
         )}
 
